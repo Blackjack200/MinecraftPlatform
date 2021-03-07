@@ -4,6 +4,7 @@ import (
 	"Blackjack200/MinecraftPlatform/config"
 	"encoding/json"
 	"fmt"
+	"github.com/gobuffalo/packr"
 	"github.com/sandertv/gophertunnel/query"
 	"html/template"
 	"net"
@@ -19,10 +20,16 @@ var listLock sync.Mutex
 var Cache string
 
 func main() {
-	config.Initialize()
+	if err := config.Initialize(); err != nil {
+		panic(err)
+	}
 	c, _ := json.Marshal(config.Cfg.Servers)
 	Cache = string(c)
 	listLock = sync.Mutex{}
+	box := packr.NewBox("./templates")
+	cb, _ := box.FindString("index.html")
+	t, _ := template.New("index").Parse(cb)
+
 	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		parts := strings.Split(strings.ToLower(request.RequestURI), "/")
 		part := parts[len(parts)-1]
@@ -35,18 +42,22 @@ func main() {
 			HandleServerList(writer, request)
 			return
 		}
-		t, _ := template.ParseFiles("templates/index.html")
-		t.Execute(writer, struct {
+		if err := t.Execute(writer, struct {
 			Title string
-		}{Title: "This is title"})
+		}{Title: "This is title"}); err != nil {
+			panic(err)
+		}
 	})
 
-	sigs := make(chan os.Signal)
-	signal.Notify(sigs, os.Interrupt, os.Kill, syscall.SIGTERM)
+	sig := make(chan os.Signal)
+	signal.Notify(sig, os.Interrupt, os.Kill, syscall.SIGTERM)
 	go func() {
-		<-sigs
-		config.Save()
+		<-sig
 		println("saved")
+		if err := config.Save(); err != nil {
+			panic(err)
+		}
+		os.Exit(0)
 	}()
 
 	err := http.ListenAndServe(":666", nil)
@@ -56,7 +67,11 @@ func main() {
 }
 
 func HandleQuery(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			panic(err)
+		}
+	}()
 	err1 := r.ParseForm()
 	if err1 != nil {
 		_, _ = fmt.Fprint(w, "{\"error\":\"invalid request\"}")
@@ -72,7 +87,7 @@ func HandleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if result == nil {
-		fmt.Fprint(w, "{\"error\":\"timeout\"}")
+		_, _ = fmt.Fprint(w, "{\"error\":\"timeout\"}")
 		return
 	}
 
@@ -82,24 +97,29 @@ func HandleQuery(w http.ResponseWriter, r *http.Request) {
 
 func HandleServerList(w http.ResponseWriter, r *http.Request) {
 	defer func() {
-		r.Body.Close()
 		listLock.Unlock()
+		if err := r.Body.Close(); err != nil {
+			panic(err)
+		}
 	}()
+
 	listLock.Lock()
-	err1 := r.ParseForm()
-	if err1 != nil {
+	err := r.ParseForm()
+
+	if err != nil {
 		_, _ = fmt.Fprint(w, "{\"error\":\"invalid request\"}")
 		return
 	}
+
 	host, port := r.Form.Get("host"), r.Form.Get("port")
 	if r.Form.Get("get") != "" {
-		fmt.Fprint(w, Cache)
+		_, _ = fmt.Fprint(w, Cache)
 		return
 	}
 	record := strings.TrimSpace(host) + ":" + strings.TrimSpace(port)
 	_, ex := config.Cfg.Servers[record]
 	if ex {
-		fmt.Fprint(w, "{\"error\":\"existed\"}")
+		_, _ = fmt.Fprint(w, "{\"error\":\"existed\"}")
 		return
 	} else {
 		re, er := GetHostByName(host)
@@ -107,9 +127,9 @@ func HandleServerList(w http.ResponseWriter, r *http.Request) {
 			config.Cfg.Servers[record] = re
 			c, _ := json.Marshal(config.Cfg.Servers)
 			Cache = string(c)
-			fmt.Fprint(w, "{\"success\":\"_\"}")
+			_, _ = fmt.Fprint(w, "{\"success\":\"_\"}")
 		} else {
-			fmt.Fprint(w, "{\"error\":\"host\"}")
+			_, _ = fmt.Fprint(w, "{\"error\":\"host\"}")
 		}
 	}
 }
@@ -125,23 +145,4 @@ func GetHostByName(host string) (string, error) {
 		}
 	}
 	return "", &net.DNSError{}
-}
-
-func ClientIP(r *http.Request) string {
-	xForwardedFor := r.Header.Get("X-Forwarded-For")
-	ip := strings.TrimSpace(strings.Split(xForwardedFor, ",")[0])
-	if ip != "" {
-		return ip
-	}
-
-	ip = strings.TrimSpace(r.Header.Get("X-Real-Ip"))
-	if ip != "" {
-		return ip
-	}
-
-	if ip, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr)); err == nil {
-		return ip
-	}
-
-	return ""
 }
