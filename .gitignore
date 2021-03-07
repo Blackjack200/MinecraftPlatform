@@ -15,3 +15,8 @@
 # vendor/
 
 .idea
+
+config.json
+*.css
+*.js
+.DS_Store
