@@ -60,7 +60,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	err := http.ListenAndServe(":666", nil)
+	err := http.ListenAndServe(config.Cfg.Bind, nil)
 	if err != nil {
 		panic(err)
 	}
