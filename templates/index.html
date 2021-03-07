@@ -132,7 +132,7 @@
                             if (request.readyState === 4 && request.status === 200) {
                                 const data = JSON.parse(request.responseText);
                                 if (data.hostname !== undefined) {
-                                    document.getElementById("info").innerHTML += "        <div class=\"card\">\n" +
+                                    document.getElementById("info").innerHTML += "        <div class=\"card m-1\">\n" +
                                         "            <div class=\"card-body\">\n" +
                                         "                <h5 class=\"card-title\">" + data.hostname + " Version: " + data.version + "</h5>\n" +
                                         "                <h6 class=\"card-subtitle mb-2 text-muted\">" + data.numplayers + "/" + data.maxplayers + "</h6>\n" +
