@@ -20,3 +20,4 @@ config.json
 *.css
 *.js
 .DS_Store
+platform_*
