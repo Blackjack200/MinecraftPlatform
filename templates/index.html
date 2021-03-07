@@ -29,8 +29,6 @@
             request.send();
             request.onreadystatechange = function () {
                 if (request.readyState === 4 && request.status === 200) {
-                    const data = JSON.parse(request.responseText);
-                    alert(request.responseText)
                     document.getElementById('query_button').disabled = false
                     add(ip, port)
                 }
@@ -122,7 +120,7 @@
             request.onreadystatechange = function () {
                 if (request.readyState === 4 && request.status === 200) {
                     const data = JSON.parse(request.responseText);
-                    for (addr in data) {
+                    for (let addr in data) {
                         let ll = addr.toString().split(":")
                         let request = new XMLHttpRequest();
                         request.open("GET", "./query?host=" + encodeURI(ll[0]) + "&port=" + encodeURI(ll[1]), true);
@@ -136,6 +134,7 @@
                                         "            <div class=\"card-body\">\n" +
                                         "                <h5 class=\"card-title\">" + data.hostname + " Version: " + data.version + "</h5>\n" +
                                         "                <h6 class=\"card-subtitle mb-2 text-muted\">" + data.numplayers + "/" + data.maxplayers + "</h6>\n" +
+                                        "                <h7 class=\"card-subtitle mb-2 text-muted\">" + addr + "</h7>\n" +
                                         "                <p class=\"card-text\">Players: " + data.players + "</p>\n" +
                                         "            </div>\n" +
                                         "            <div class=\"card-footer text-muted\">\n" +
