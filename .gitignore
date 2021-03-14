@@ -18,6 +18,6 @@
 
 config.json
 *.css
-*.js
 .DS_Store
 platform_*
+db

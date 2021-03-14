@@ -1,51 +1,72 @@
 package main
 
 import (
-	"Blackjack200/MinecraftPlatform/config"
+	"Blackjack200/MinecraftPlatform/api"
+	"Blackjack200/MinecraftPlatform/storage"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/gobuffalo/packr"
-	"github.com/sandertv/gophertunnel/query"
+	"github.com/sirupsen/logrus"
 	"html/template"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
-	"sync"
 	"syscall"
 )
 
-var listLock sync.Mutex
-var Cache string
-
+//goland:noinspection GoUnhandledErrorResult
 func main() {
-	if err := config.Initialize(); err != nil {
-		panic(err)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		ForceColors:     true,
+		FullTimestamp:   true,
+		TimestampFormat: "15:04:05",
+	})
+	logrus.Info("Start Platform")
+	if err := storage.Initialize(); err != nil {
+		logrus.Fatal(err)
 	}
-	c, _ := json.Marshal(config.Cfg.Servers)
-	Cache = string(c)
-	listLock = sync.Mutex{}
-	box := packr.NewBox("./templates")
-	cb, _ := box.FindString("index.html")
-	t, _ := template.New("index").Parse(cb)
 
+	c, _ := json.Marshal(storage.Config.Servers)
+	api.InitializeList(string(c))
+	api.InitializeQuery()
+	templateBox := packr.NewBox("./templates/")
+	index, _ := templateBox.FindString("index.html")
+	entry, _ := templateBox.FindString("entry.html")
+	e := base64.StdEncoding.EncodeToString([]byte(entry))
+	t, _ := template.New("index").Parse(index)
+
+	staticBox := packr.NewBox("./static/")
 	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		parts := strings.Split(strings.ToLower(request.RequestURI), "/")
 		part := parts[len(parts)-1]
 		if strings.HasPrefix(part, "query") {
-			HandleQuery(writer, request)
+			api.HandleQuery(writer, request)
+			return
+		}
+		if strings.HasPrefix(part, "list") {
+			api.HandleServerList(writer, request)
 			return
 		}
 
-		if strings.HasPrefix(part, "list") {
-			HandleServerList(writer, request)
+		if len(parts) >= 2 && parts[1] == "static" {
+			ctx, err := staticBox.FindString(strings.TrimPrefix(part, "static"))
+			if err != nil {
+				fmt.Fprint(writer, err)
+				return
+			}
+			fmt.Fprint(writer, ctx)
 			return
 		}
 		if err := t.Execute(writer, struct {
 			Title string
-		}{Title: "This is title"}); err != nil {
-			panic(err)
+			Entry string
+		}{
+			Title: "ServerPlatform",
+			Entry: e,
+		}); err != nil {
+			logrus.Fatal(err)
 		}
 	})
 
@@ -53,96 +74,22 @@ func main() {
 	signal.Notify(sig, os.Interrupt, os.Kill, syscall.SIGTERM)
 	go func() {
 		<-sig
-		println("saved")
-		if err := config.Save(); err != nil {
-			panic(err)
+		logrus.Info("Save Config")
+		if err, err2 := storage.Save(); err != nil {
+			logrus.Fatal(err)
+		} else if err2 != nil {
+			logrus.Fatal(err2)
 		}
 		os.Exit(0)
 	}()
-
-	err := http.ListenAndServe(config.Cfg.Bind, nil)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func HandleQuery(w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		if err := r.Body.Close(); err != nil {
-			panic(err)
-		}
-	}()
-	err1 := r.ParseForm()
-	if err1 != nil {
-		_, _ = fmt.Fprint(w, "{\"error\":\"invalid request\"}")
-		return
-	}
-	host, port := r.Form.Get("host"), r.Form.Get("port")
-	var result map[string]string
-	d, er := query.Do(host + ":" + port)
-	if er != nil {
-		result = nil
-	} else {
-		result = d
-	}
-
-	if result == nil {
-		_, _ = fmt.Fprint(w, "{\"error\":\"timeout\"}")
-		return
-	}
-
-	req, _ := json.Marshal(result)
-	_, _ = fmt.Fprint(w, string(req))
-}
-
-func HandleServerList(w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		listLock.Unlock()
-		if err := r.Body.Close(); err != nil {
-			panic(err)
-		}
-	}()
-
-	listLock.Lock()
-	err := r.ParseForm()
-
-	if err != nil {
-		_, _ = fmt.Fprint(w, "{\"error\":\"invalid request\"}")
-		return
-	}
-
-	host, port := r.Form.Get("host"), r.Form.Get("port")
-	if r.Form.Get("get") != "" {
-		_, _ = fmt.Fprint(w, Cache)
-		return
-	}
-	record := strings.TrimSpace(host) + ":" + strings.TrimSpace(port)
-	_, ex := config.Cfg.Servers[record]
-	if ex {
-		_, _ = fmt.Fprint(w, "{\"error\":\"existed\"}")
-		return
-	} else {
-		re, er := GetHostByName(host)
-		if er == nil {
-			config.Cfg.Servers[record] = re
-			c, _ := json.Marshal(config.Cfg.Servers)
-			Cache = string(c)
-			_, _ = fmt.Fprint(w, "{\"success\":\"_\"}")
+	errs := make(chan error)
+	go func() {
+		if err := http.ListenAndServe(storage.Config.Bind, nil); err != nil {
+			errs <- err
+			logrus.Fatal(err)
 		} else {
-			_, _ = fmt.Fprint(w, "{\"error\":\"host\"}")
 		}
-	}
-}
-
-func GetHostByName(host string) (string, error) {
-	addr, err := net.LookupIP(host)
-	if err != nil {
-		return "", err
-	}
-	for _, ip := range addr {
-		if ipv4 := ip.To4(); ipv4 != nil {
-			return ipv4.String(), nil
-		}
-	}
-	return "", &net.DNSError{}
+	}()
+	logrus.Info("Bind: " + storage.Config.Bind)
+	<-errs
 }
