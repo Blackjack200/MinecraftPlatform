@@ -24,9 +24,7 @@ func InitializeQuery() {
 //goland:noinspection GoUnhandledErrorResult
 func HandleQuery(w http.ResponseWriter, r *http.Request) {
 	defer func() {
-		if err := r.Body.Close(); err != nil {
-			panic(err)
-		}
+		_ = r.Body.Close()
 	}()
 
 	if ParseRequest(w, r) {
