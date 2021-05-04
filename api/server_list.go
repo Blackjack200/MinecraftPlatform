@@ -9,20 +9,17 @@ import (
 	"sync"
 )
 
-var mutex sync.Mutex
+var mu sync.Mutex
 var listCache string
 
 func InitializeList(list string) {
 	listCache = list
-	mutex = sync.Mutex{}
+	mu = sync.Mutex{}
 }
 
-//goland:noinspection GoUnhandledErrorResult
 func HandleServerList(w http.ResponseWriter, r *http.Request) {
 	defer func() {
-		if err := r.Body.Close(); err != nil {
-			panic(err)
-		}
+		_ = r.Body.Close()
 	}()
 
 	if ParseRequest(w, r) {
@@ -36,8 +33,8 @@ func HandleServerList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	record := FormatAddr(host, port)
-	mutex.Lock()
-	defer mutex.Unlock()
+	mu.Lock()
+	defer mu.Unlock()
 	if _, contains := storage.Config.Servers[record]; contains {
 		fmt.Fprint(w, "{\"error\":\"existed\"}")
 		return
